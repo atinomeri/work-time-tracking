@@ -1,0 +1,6 @@
+{
+  "name": "TimeTrack — Учёт рабочего времени",
+  "description": "Минималистичное веб-приложение для учёта рабочего времени сотрудников с сохранением активных таймеров в SQLite, отчётами за период и автотестами.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

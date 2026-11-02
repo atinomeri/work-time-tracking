@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>TimeTrack — Учёт рабочего времени</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #0f172a; }
+    .grid { display: grid; grid-template-columns: 1fr 1.6fr; gap: 1.5rem; }
+    section { border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    input, select, button { padding: 0.45rem 0.65rem; margin: 0.25rem 0; font-size: 0.9rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.9rem; }
+    th, td { border-bottom: 1px solid #e2e8f0; text-align: left; padding: 0.45rem; }
+    .mono { font-family: monospace; font-variant-numeric: tabular-nums; }
+    .err { color: #dc2626; font-size: 0.875rem; margin: 0.5rem 0; }
+  </style>
+</head>
+<body>
+  <h1>TimeTrack — Учёт рабочего времени сотрудников</h1>
+  <div id="error" class="err"></div>
+  <div class="grid">
+    <div>
+      <section>
+        <h3>1. Новый сотрудник</h3>
+        <input id="empName" placeholder="Например, Anna Test" />
+        <button onclick="addEmployee()">Добавить</button>
+      </section>
+      <section>
+        <h3>2. Таймер задачи</h3>
+        <select id="empSelect"></select><br/>
+        <input id="taskDesc" placeholder="Описание задачи" style="width:90%" /><br/>
+        <button onclick="startTimer()">Запустить таймер</button>
+        <button onclick="stopTimer()">Остановить</button>
+      </section>
+    </div>
+    <div>
+      <section>
+        <h3>3. Отчёт за период (UTC)</h3>
+        С <input type="date" id="dateFrom" /> По <input type="date" id="dateTo" />
+        <button onclick="loadReport()">Показать</button>
+        <h4>Сводка по сотрудникам</h4>
+        <table id="summaryTable"><thead><tr><th>Сотрудник</th><th>Всего времени</th></tr></thead><tbody></tbody></table>
+        <h4>Записи за период</h4>
+        <table id="entriesTable"><thead><tr><th>Сотрудник</th><th>Задача</th><th>Старт (UTC)</th><th>Стоп (UTC)</th><th>В периоде</th></tr></thead><tbody></tbody></table>
+      </section>
+    </div>
+  </div>
+  <script>
+    const fmt = (s) => `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+    const today = new Date().toISOString().slice(0, 10);
+    document.getElementById('dateFrom').value = today;
+    document.getElementById('dateTo').value = today;
+
+    async function api(url, opts) {
+      document.getElementById('error').textContent = '';
+      const r = await fetch(url, opts);
+      const data = await r.json();
+      if (!r.ok) { document.getElementById('error').textContent = data.detail || data.error; throw new Error(data.detail); }
+      return data;
+    }
+    async function refreshEmployees() {
+      const list = await api('/api/employees');
+      const sel = document.getElementById('empSelect');
+      sel.innerHTML = list.map(e => `<option value="${e.id}">${e.name}${e.timer_id ? ' (В работе)' : ''}</option>`).join('');
+    }
+    async function addEmployee() {
+      const name = document.getElementById('empName').value;
+      await api('/api/employees', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name }) });
+      document.getElementById('empName').value = '';
+      await refreshEmployees();
+      await loadReport();
+    }
+    async function startTimer() {
+      const employee_id = Number(document.getElementById('empSelect').value);
+      const task_description = document.getElementById('taskDesc').value;
+      await api('/api/timers/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ employee_id, task_description }) });
+      document.getElementById('taskDesc').value = '';
+      await refreshEmployees();
+    }
+    async function stopTimer() {
+      const employee_id = Number(document.getElementById('empSelect').value);
+      await api('/api/timers/stop', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ employee_id }) });
+      await refreshEmployees();
+      await loadReport();
+    }
+    async function loadReport() {
+      const df = document.getElementById('dateFrom').value;
+      const dt = document.getElementById('dateTo').value;
+      const rep = await api(`/api/reports?date_from=${df}&date_to=${dt}`);
+      document.querySelector('#summaryTable tbody').innerHTML = rep.employees_summary.map(s =>
+        `<tr><td>${s.employee_name}</td><td class="mono">${fmt(s.total_seconds)}</td></tr>`
+      ).join('');
+      document.querySelector('#entriesTable tbody').innerHTML = rep.entries.length ? rep.entries.map(e =>
+        `<tr><td>${e.employee_name}</td><td>${e.task_description}</td><td class="mono">${e.start_time}</td><td class="mono">${e.end_time}</td><td class="mono">${fmt(e.clipped_duration_seconds)}</td></tr>`
+      ).join('') : `<tr><td colspan="5">Нет завершённых записей за выбранный период.</td></tr>`;
+    }
+    refreshEmployees().then(loadReport);
+  </script>
+</body>
+</html>
